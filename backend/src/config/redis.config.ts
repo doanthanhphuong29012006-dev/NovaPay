@@ -29,9 +29,9 @@ class RedisManager {
 
         this.redlock = new Redlock([this.client], {
             driftFactor: 0.01,
-            retryCount: 10,
-            retryDelay: 150,
-            retryJitter: 100,
+            retryCount: 60,
+            retryDelay: 100,
+            retryJitter: 50,
             automaticExtensionThreshold: 500,
         });
     }
