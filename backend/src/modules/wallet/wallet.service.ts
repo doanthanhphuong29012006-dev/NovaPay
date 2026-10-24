@@ -138,4 +138,24 @@ export class WalletService {
             });
         }
     }
+
+    public async auditWallet(walletId: string) {
+        const objectId = new Types.ObjectId(walletId);
+        const wallet = await this.walletRepo.findById(objectId);
+
+        if (!wallet) {
+            throw new Error('Không tìm thấy ví.');
+        }
+
+        const calculatedBalance = await this.ledgerRepo.calculateLedgerBalance(objectId);
+        const isMatched = wallet.balance === calculatedBalance;
+
+        return {
+            walletId: wallet._id,
+            currentBalance: wallet.balance,
+            ledgerCalculatedBalance: calculatedBalance,
+            discrepancy: wallet.balance - calculatedBalance,
+            status: isMatched ? 'MATCHED (Toàn vẹn dữ liệu)' : 'MISMATCHED (Phát hiện sai lệch!)',
+        }
+    }
 }

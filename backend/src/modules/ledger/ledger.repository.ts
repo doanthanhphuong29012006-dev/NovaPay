@@ -27,7 +27,7 @@ export class LedgerRepository {
         return LedgerEntryModel.insertMany(entries, { session });
     }
 
-    public async calulateLedgerBalance(walletId: Types.ObjectId): Promise<number> {
+    public async calculateLedgerBalance(walletId: Types.ObjectId): Promise<number> {
         const result = await LedgerEntryModel.aggregate([
             {
                 $match: { walletId }
