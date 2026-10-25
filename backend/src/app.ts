@@ -1,8 +1,20 @@
 import express, { Request, Response, NextFunction } from 'express';
 import walletRoutes from './modules/wallet/wallet.routes';
 
+declare global {
+    namespace Express {
+        interface Request {
+            rawBody?: Buffer;
+        }
+    }
+}
+
 const app = express();
-app.use(express.json());
+app.use(express.json({
+    verify: (req: Request, _res, buf: Buffer) => {
+        req.rawBody = buf;
+    },
+}));
 
 // Đăng ký Routes
 app.use('/api/v1/wallets', walletRoutes);

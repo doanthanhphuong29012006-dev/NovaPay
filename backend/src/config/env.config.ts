@@ -11,6 +11,7 @@ const envSchema = z.object({
     REDIS_PORT: z.string().default('6379').transform(Number),
     REDIS_PASSWORD: z.string().optional(),
     JWT_SECRET: z.string().min(10, 'JWT_SECRET phải có ít nhất 10 ký tự'),
+    WEBHOOK_SECRET: z.string().min(16, 'WEBHOOK_SECRET phải có ít nhất 16 ký tự'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

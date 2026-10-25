@@ -11,6 +11,10 @@
     "redlock": "^5.0.0-beta.2",
     "zod": "^4.6.7"
   },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test:concurrency": "tsx tests/concurrency.test.ts"
+  },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
