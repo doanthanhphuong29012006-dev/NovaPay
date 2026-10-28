@@ -1,6 +1,9 @@
 import { ClientSession, Types } from 'mongoose';
 import { WalletModel, IWallet, WalletStatus } from './wallet.model';
 
+export const SYSTEM_USER_ID = new Types.ObjectId('000000000000000000000001');
+const SYSTEM_INITIAL_FLOAT = 1_000_000_000_000;
+
 export class WalletRepository {
     public async findById(walletId: string | Types.ObjectId, session?: ClientSession): Promise<IWallet | null> {
         return WalletModel.findById(walletId).session(session || null);
@@ -34,5 +37,29 @@ export class WalletRepository {
             },
             { new: true, session }
         );
+    }
+
+    public async getOrCreateSystemWallet(currency: string, session: ClientSession): Promise<IWallet> {
+        let systemWallet = await WalletModel.findOne({
+            userId: SYSTEM_USER_ID,
+            currency,
+        }).session(session);
+
+        if (!systemWallet) {
+            const [created] = await WalletModel.create(
+                [
+                    {
+                        userId: SYSTEM_USER_ID,
+                        currency,
+                        balance: SYSTEM_INITIAL_FLOAT,
+                        status: WalletStatus.ACTIVE,
+                    },
+                ],
+                { session }
+            );
+            systemWallet = created;
+        }
+
+        return systemWallet;
     }
 }
