@@ -4,7 +4,7 @@ import { env } from '../../config/env.config';
 
 const MAX_WEBHOOK_AGE_MS = 5 * 60 * 1000;
 
-export const verifyWebHookSignature = (req: Request, res: Response, next: NextFunction): void => {
+export const verifyWebhookSignature = (req: Request, res: Response, next: NextFunction): void => {
     try {
         const signatureHeader = req.headers['x-webhook-signature'] as string;
         const timestampHeader = req.headers['x-webhook-timestamp'] as string;
