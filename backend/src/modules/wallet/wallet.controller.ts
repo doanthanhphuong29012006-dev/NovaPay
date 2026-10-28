@@ -9,6 +9,15 @@ const transferSchema = z.object({
     description: z.string().min(1).max(255),
 });
 
+const depositWebhookSchema = z.object({
+    provider: z.enum(['VNPAY', 'MOMO', 'STRIPE', 'PAYOS']),
+    providerTransactionId: z.string().min(5).max(100),
+    targetWalletId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID ví nhận không hợp lệ'),
+    amount: z.number().int().positive('Số tiền nạp phải là số nguyên dương'),
+    currency: z.string().default('VND'),
+    status: z.enum(['SUCCESS', 'FAILED']),
+});
+
 export class WalletController {
     constructor(private readonly walletService = new WalletService()) {}
 
@@ -47,6 +56,20 @@ export class WalletController {
                 success: true,
                 data: result,
             })
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    public depositWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const parsedBody = depositWebhookSchema.parse(req.body);
+            const result = await this.walletService.processDepositWebhook(parsedBody);
+
+            res.status(200).json({
+                success: true,
+                data: result,
+            });
         } catch (error) {
             next(error);
         }
