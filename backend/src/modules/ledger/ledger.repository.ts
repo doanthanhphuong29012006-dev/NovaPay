@@ -52,4 +52,11 @@ export class LedgerRepository {
 
         return result.length > 0 ? result[0].netBalance : 0;
     }
+
+    public async findByIdempotencyKey(
+        idempotencyKey: string,
+        session?: ClientSession
+    ): Promise<ITransaction | null> {
+        return TransactionModel.findOne({ idempotencyKey }).session(session || null);
+    }
 }
