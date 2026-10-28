@@ -14,6 +14,15 @@ export interface TransferMoneyDTO {
     idempotencyKey: string;
 }
 
+export interface DepositWebhookDTO {
+    provider: string;
+    providerTransactionId: string;
+    targetWalletId: string;
+    amount: number;
+    currency: string;
+    status: 'SUCCESS' | 'FAILED';
+}
+
 export class WalletService {
     constructor(
         private readonly walletRepo = new WalletRepository(),
@@ -156,6 +165,119 @@ export class WalletService {
             ledgerCalculatedBalance: calculatedBalance,
             discrepancy: wallet.balance - calculatedBalance,
             status: isMatched ? 'MATCHED (Toàn vẹn dữ liệu)' : 'MISMATCHED (Phát hiện sai lệch!)',
+        }
+    }
+
+    public async processDepositWebhook(dto: DepositWebhookDTO) {
+        const { provider, providerTransactionId, targetWalletId, amount, currency, status } = dto;
+
+        const idempotencyKey = `webhook:${provider.toUpperCase()}:${providerTransactionId}`;
+
+        if (status != 'SUCCESS') {
+            return {
+                alreadyProcessed: false,
+                message: 'Giao dịch nạp tiền ở trạng thái FAILED từ cổng thanh toán, không cộng số dư.',
+            };
+        }
+
+        const lockResources = [
+            `locks:webhook:${idempotencyKey}`,
+            `locks:wallet:${targetWalletId}`,
+        ].sort();
+
+        const lock = await redlock.acquire(lockResources, 5000);
+
+        try {
+            return await Database.runInTransaction(async (session) => {
+                const existingTx = await this.ledgerRepo.findByIdempotencyKey(idempotencyKey, session);
+                if (existingTx) {
+                    return {
+                        alreadyProcessed: true,
+                        transactionId: existingTx._id,
+                        amount: existingTx.amount,
+                        message: 'Webhook này đã được xử lý trước đó (Idempotent Replay).',
+                    };
+                }
+
+                const receiverObjectId = new Types.ObjectId(targetWalletId);
+
+                const [userWallet, systemWallet] = await Promise.all([
+                    this.walletRepo.findById(receiverObjectId, session),
+                    this.walletRepo.getOrCreateSystemWallet(currency, session),
+                ]);
+
+                if (!userWallet) {
+                    throw new Error('Không tìm thấy ví người dùng cần nạp tiền.');
+                }
+
+                if (userWallet.status !== WalletStatus.ACTIVE) {
+                    throw new Error('Ví người dùng đang bị khóa, không thể nạp tiền.');
+                }
+
+                if (userWallet.currency !== currency) {
+                    throw new Error('Loại tiền tệ từ Webhook không khớp với ví người dùng.');
+                }
+
+                const updatedSystemWallet = await this.walletRepo.debitBalance(
+                    systemWallet._id,
+                    amount,
+                    session
+                );
+                if (!updatedSystemWallet) {
+                    throw new Error('Ngân quỹ hệ thống (System Float) không đủ hạn mức đối ứng.');
+                }
+
+                const updatedUserWallet = await this.walletRepo.creditBalance(receiverObjectId, amount, session);
+                if (!updatedUserWallet) {
+                    throw new Error('Cộng tiền vào ví người dùng thất bại.');
+                }
+
+                const transaction = await this.ledgerRepo.createTransaction(
+                    {
+                        idempotencyKey,
+                        type: TransactionType.DEPOSIT,
+                        status: TransactionStatus.SUCCESS,
+                        amount,
+                        currency,
+                        fromWalletId: systemWallet._id,
+                        toWalletId: receiverObjectId,
+                        description:`Nạp tiền qua ${provider} (Mã GD: ${providerTransactionId})`,
+                    },
+                    session
+                );
+
+                await this.ledgerRepo.createDoubleEntries(
+                    [
+                        {
+                            transactionId: transaction._id,
+                            walletId: systemWallet._id,
+                            type: EntryType.DEBIT,
+                            amount,
+                            balanceBefore: systemWallet.balance,
+                            balanceAfter: updatedSystemWallet.balance,
+                        },
+                        {
+                            transactionId: transaction._id,
+                            walletId: receiverObjectId,
+                            type: EntryType.CREDIT,
+                            amount,
+                            balanceBefore: userWallet.balance,
+                            balanceAfter: updatedUserWallet.balance,
+                        },
+                    ],
+                    session
+                );
+
+                return {
+                    alreadyProcessed: false,
+                    transactionId: transaction._id,
+                    walletId: updatedUserWallet._id,
+                    amount,
+                    newBalance: updatedUserWallet.balance,
+                };
+            });
+        } finally {
+            await lock.release().catch(() => {});
         }
     }
 }
