@@ -59,4 +59,15 @@ export class LedgerRepository {
     ): Promise<ITransaction | null> {
         return TransactionModel.findOne({ idempotencyKey }).session(session || null);
     }
+
+    public getStatementCursor(walletId: string, fromDate: Date, toDate: Date) {
+        return LedgerEntryModel.find({
+            walletId,
+            createdAt: { $gte: fromDate, $lte: toDate },
+        })
+            .populate('transactionId', 'type description referenceId idempotencyKey')
+            .sort({ createdAt: 1 })
+            .lean()
+            .cursor({ batchSize: 500 });
+    }
 }
