@@ -33,6 +33,14 @@ class RedisManager {
             retryDelay: 100,
             retryJitter: 50,
         });
+
+        // Listener chặn crash process do lỗi tranh chấp khóa
+        this.redlock.on('clientError', (err: any) => {
+            if (err?.name === 'ResourceLockedError') {
+                return; 
+            }
+            console.error('Lỗi nội bộ Redlock:', err);
+        });
     }
 
     public async disconnect(): Promise<void> {
