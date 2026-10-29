@@ -18,6 +18,12 @@ const depositWebhookSchema = z.object({
     status: z.enum(['SUCCESS', 'FAILED']),
 });
 
+const exportStatementSchema = z.object({
+    userEmail: z.string().email('Email nhận sao kê không hợp lệ'),
+    fromDate: z.string().datetime({ message: 'fromDate phải chuẩn định dạng ISO 8601' }),
+    toDate: z.string().datetime({ message: 'toDate phải chuẩn định dạng ISO 8601' }),
+});
+
 export class WalletController {
     constructor(private readonly walletService = new WalletService()) {}
 
@@ -70,6 +76,35 @@ export class WalletController {
                 success: true,
                 data: result,
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    public requestStatement = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const parsedBody = exportStatementSchema.parse(req.body);
+            const walletId = req.params.id as string ;
+
+            const result = await this.walletService.requestStatementExport({ walletId, ...parsedBody });
+
+            res.status(202).json({
+                success: true,
+                data: result,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    public getStatementStatus = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.walletService.getStatementJobStatus(req.params.jobId as string);
+
+            res.status(200).json({
+                success: true,
+                data: result,
+            })
         } catch (error) {
             next(error);
         }
