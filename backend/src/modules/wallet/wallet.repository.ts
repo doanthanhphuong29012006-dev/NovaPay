@@ -62,4 +62,24 @@ export class WalletRepository {
 
         return systemWallet;
     }
+
+    public async createWallet(userId: Types.ObjectId, currency: string, session: ClientSession): Promise<IWallet> {
+        const [wallet] = await WalletModel.create(
+            [
+                {
+                    userId,
+                    currency,
+                    balance: 0,
+                    status: WalletStatus.ACTIVE,
+                },
+            ],
+            { session }
+        );
+
+        return wallet;
+    }
+
+    public async findByUserId(userId: string | Types.ObjectId): Promise<IWallet[]> {
+        return WalletModel.find({ userId });
+    }
 }
