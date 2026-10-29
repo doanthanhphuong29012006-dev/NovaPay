@@ -1,8 +1,13 @@
 import { randomUUID } from 'crypto';
+import type { Server } from 'http';
 import mongoose, { Types } from 'mongoose';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import app from '../src/app';
 import { Database } from '../src/config/database.config';
 import { redisClient, redisManager } from '../src/config/redis.config';
 import { WalletModel, WalletStatus } from '../src/modules/wallet/wallet.model';
+import { UserModel, UserRole, UserStatus } from '../src/modules/auth/user.model';
 import {
     TransactionModel,
     LedgerEntryModel,
@@ -16,31 +21,77 @@ import { env } from '../src/config/env.config';
 const API_URL = `http://localhost:${env.PORT}/api/v1/wallets`;
 const walletService = new WalletService();
 
-//Hàm khởi tạo 2 ví mẫu với số dư ban đầu và ghi bút toán nạp tiền gốc vào Sổ cái
+// SỬA LỖI 4: Định nghĩa mã PIN hợp lệ 6 chữ số theo transferSchema của wallet.controller.ts
+const TEST_PIN = '123456';
+
+// SỬA LỖI 4: Helper tạo JWT token hợp lệ có cấu trúc sub, role, jti để vượt qua authenticateJWT middleware
+function generateTestToken(userId: Types.ObjectId): string {
+    const jti = randomUUID();
+    return jwt.sign(
+        { sub: userId.toString(), role: UserRole.USER, jti },
+        env.JWT_SECRET,
+        { expiresIn: 3600 }
+    );
+}
+
+// Hàm khởi tạo 2 ví mẫu với số dư ban đầu, người dùng tương ứng (có mã PIN và JWT) và ghi bút toán nạp tiền gốc vào Sổ cái
 async function setupTestWallets(initialBalanceA: number, initialBalanceB: number) {
-    // Xóa dữ liệu test cũ
+    // Xóa dữ liệu test cũ bao gồm cả UserModel
     await Promise.all([
+        UserModel.deleteMany({}),
         WalletModel.deleteMany({}),
         TransactionModel.deleteMany({}),
         LedgerEntryModel.deleteMany({}),
         redisClient.flushall(),
     ]);
 
+    // SỬA LỖI 4: Tạo User A và User B thật trong UserModel với mã PIN đã được hash bằng bcrypt
+    const pinHash = await bcrypt.hash(TEST_PIN, 10);
+    const passwordHash = await bcrypt.hash('Password123!', 10);
+
+    const userAId = new Types.ObjectId();
+    const userBId = new Types.ObjectId();
+
+    await UserModel.create([
+        {
+            _id: userAId,
+            email: `user-a-${randomUUID()}@example.com`,
+            fullName: 'User A',
+            passwordHash,
+            pinHash,
+            role: UserRole.USER,
+            status: UserStatus.ACTIVE,
+        },
+        {
+            _id: userBId,
+            email: `user-b-${randomUUID()}@example.com`,
+            fullName: 'User B',
+            passwordHash,
+            pinHash,
+            role: UserRole.USER,
+            status: UserStatus.ACTIVE,
+        },
+    ]);
+
+    // SỬA LỖI 4: Tạo token JWT cho User A và User B
+    const tokenA = generateTestToken(userAId);
+    const tokenB = generateTestToken(userBId);
+
     const walletAId = new Types.ObjectId();
     const walletBId = new Types.ObjectId();
 
-    // Tạo 2 ví
+    // SỬA LỖI 4: Gán đúng userAId và userBId cho từng ví để vượt qua kiểm tra quyền sở hữu ví (senderWallet.userId === currentUserId)
     await WalletModel.create([
         {
             _id: walletAId,
-            userId: new Types.ObjectId(),
+            userId: userAId,
             currency: 'VND',
             balance: initialBalanceA,
             status: WalletStatus.ACTIVE,
         },
         {
             _id: walletBId,
-            userId: new Types.ObjectId(),
+            userId: userBId,
             currency: 'VND',
             balance: initialBalanceB,
             status: WalletStatus.ACTIVE,
@@ -85,27 +136,37 @@ async function setupTestWallets(initialBalanceA: number, initialBalanceB: number
     return {
         walletAId: walletAId.toString(),
         walletBId: walletBId.toString(),
+        tokenA,
+        tokenB,
+        userAId: userAId.toString(),
+        userBId: userBId.toString(),
     };
 }
 
-//Helper gửi HTTP POST chuyển tiền
+// SỬA LỖI 4: Helper gửi HTTP POST chuyển tiền - Bổ sung header Authorization Bearer token và body chứa pin 6 chữ số
 async function sendTransferRequest(
     fromWalletId: string,
     toWalletId: string,
     amount: number,
-    idempotencyKey: string
+    idempotencyKey: string,
+    token: string,
+    pin: string = TEST_PIN
 ) {
     const response = await fetch(`${API_URL}/transfer`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-Idempotency-Key': idempotencyKey,
+            // SỬA LỖI 4: Gửi kèm Authorization header
+            'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
             fromWalletId,
             toWalletId,
             amount,
             description: 'Test Concurrency Transfer',
+            // SỬA LỖI 4: Gửi kèm mã PIN hợp lệ trong body
+            pin,
         }),
     });
 
@@ -129,7 +190,8 @@ async function runOverspendingTest() {
     const TOTAL_CONCURRENT_REQUESTS = 100;
     const EXPECTED_SUCCESS_COUNT = 5; // 500k / 100k = tối đa 5 giao dịch thành công
 
-    const { walletAId, walletBId } = await setupTestWallets(INITIAL_BALANCE_A, 0);
+    // SỬA LỖI 4: Lấy tokenA từ setupTestWallets
+    const { walletAId, walletBId, tokenA } = await setupTestWallets(INITIAL_BALANCE_A, 0);
 
     console.log(`Trạng thái ban đầu:`);
     console.log(`   - Số dư Ví A: ${INITIAL_BALANCE_A.toLocaleString()} VND`);
@@ -140,9 +202,9 @@ async function runOverspendingTest() {
 
     const startTime = Date.now();
 
-    // Tạo mảng 100 Promises chạy song song cùng một lúc (mỗi request 1 Idempotency Key riêng)
+    // SỬA LỖI 4: Truyền tokenA và TEST_PIN vào từng request
     const requests = Array.from({ length: TOTAL_CONCURRENT_REQUESTS }, () =>
-        sendTransferRequest(walletAId, walletBId, TRANSFER_AMOUNT, randomUUID())
+        sendTransferRequest(walletAId, walletBId, TRANSFER_AMOUNT, randomUUID(), tokenA, TEST_PIN)
     );
 
     const results = await Promise.all(requests);
@@ -188,13 +250,15 @@ async function runIdempotencyTest() {
     console.log('TEST 2: BẮN 20 REQUEST TRÙNG IDEMPOTENCY KEY CÙNG LÚC');
     console.log('================================================================');
 
-    const { walletAId, walletBId } = await setupTestWallets(1_000_000, 0);
+    // SỬA LỖI 4: Lấy tokenA từ setupTestWallets
+    const { walletAId, walletBId, tokenA } = await setupTestWallets(1_000_000, 0);
     const sharedIdempotencyKey = `dup-key-${randomUUID()}`;
 
     console.log(`Đang bắn 20 request có CÙNG key "${sharedIdempotencyKey}" (Mỗi request 100,000 VND)...`);
 
+    // SỬA LỖI 4: Truyền tokenA và TEST_PIN vào từng request trùng Idempotency key
     const requests = Array.from({ length: 20 }, () =>
-        sendTransferRequest(walletAId, walletBId, 100_000, sharedIdempotencyKey)
+        sendTransferRequest(walletAId, walletBId, 100_000, sharedIdempotencyKey, tokenA, TEST_PIN)
     );
 
     const results = await Promise.all(requests);
@@ -226,18 +290,16 @@ async function runDeadlockPreventionTest() {
     console.log('================================================================');
 
     // Cả 2 ví đều có 1,000,000 VND
-    const { walletAId, walletBId } = await setupTestWallets(1_000_000, 1_000_000);
+    const { walletAId, walletBId, tokenA, tokenB } = await setupTestWallets(1_000_000, 1_000_000);
 
     console.log('Đang bắn đồng thời: 20 luồng (A -> B: 10,000đ) và 20 luồng (B -> A: 15,000đ)...');
 
-    // 20 luồng A chuyển cho B (Tổng A giảm 200k, B tăng 200k)
     const aToBRequests = Array.from({ length: 20 }, () =>
-        sendTransferRequest(walletAId, walletBId, 10_000, randomUUID())
+        sendTransferRequest(walletAId, walletBId, 10_000, randomUUID(), tokenA, TEST_PIN)
     );
 
-    // 20 luồng B chuyển ngược lại cho A (Tổng B giảm 300k, A tăng 300k)
     const bToARequests = Array.from({ length: 20 }, () =>
-        sendTransferRequest(walletBId, walletAId, 15_000, randomUUID())
+        sendTransferRequest(walletBId, walletAId, 15_000, randomUUID(), tokenB, TEST_PIN)
     );
 
     // Trộn lẫn và bắn cùng lúc
@@ -277,9 +339,19 @@ async function runDeadlockPreventionTest() {
 
 // HÀM CHẠY TỔNG HỢP
 async function main() {
+    let server: Server | undefined;
+
     try {
         const db = Database.getInstance();
         await db.connect();
+
+        // SỬA LỖI 4: Tự động khởi động HTTP server trước khi chạy test suites
+        await new Promise<void>((resolve) => {
+            server = app.listen(env.PORT, () => {
+                console.log(`[Test Server] Đã tự động khởi động HTTP server tại http://localhost:${env.PORT}`);
+                resolve();
+            });
+        });
 
         await runOverspendingTest();
         await runIdempotencyTest();
@@ -290,6 +362,15 @@ async function main() {
         console.error('\nBÀI TEST THẤT BẠI:', error);
         process.exitCode = 1;
     } finally {
+        // SỬA LỖI 4: Đóng HTTP server sau khi hoàn thành test suite
+        if (server) {
+            await new Promise<void>((resolve) => {
+                server!.close(() => {
+                    console.log('[Test Server] Đã đóng HTTP server an toàn.');
+                    resolve();
+                });
+            });
+        }
         await mongoose.connection.close();
         await redisManager.disconnect();
     }
