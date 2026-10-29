@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import authRoutes from './modules/auth/auth.routes';
 import walletRoutes from './modules/wallet/wallet.routes';
 
 declare global {
@@ -31,6 +32,7 @@ app.get('/health', (_req, res) => {
     });
 });
 
+app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/wallets', walletRoutes);
 
 // Global Error Handler
