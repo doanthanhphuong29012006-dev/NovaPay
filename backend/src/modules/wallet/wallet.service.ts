@@ -6,8 +6,11 @@ import { WalletRepository } from "./wallet.repository";
 import { WalletStatus } from "./wallet.model";
 import { EntryType, TransactionStatus, TransactionType } from "../ledger/ledger.model";
 import { StatementJobPayload, statementQueue } from "../../jobs/statement.queue";
+import { AuthService } from "../auth/auth.service";
 
 export interface TransferMoneyDTO {
+    currentUserId: string;
+    pin: string;
     fromWalletId: string;
     toWalletId: string;
     amount: number;
@@ -27,11 +30,14 @@ export interface DepositWebhookDTO {
 export class WalletService {
     constructor(
         private readonly walletRepo = new WalletRepository(),
-        private readonly ledgerRepo = new LedgerRepository()
+        private readonly ledgerRepo = new LedgerRepository(),
+        private readonly authService = new AuthService()
     ) {}
 
     public async transferMoney(dto: TransferMoneyDTO) {
-        const { fromWalletId, toWalletId, amount, description, idempotencyKey } = dto;
+        const { currentUserId, pin, fromWalletId, toWalletId, amount, description, idempotencyKey } = dto;
+
+        await this.authService.verifyTransactionPin(currentUserId, pin);
 
         if (fromWalletId === toWalletId) {
             throw new Error('Không thể tự chuyển tiền cho ví của mình.');
@@ -59,6 +65,10 @@ export class WalletService {
 
                 if (!senderWallet || !receiverWallet) {
                     throw new Error('Không tìm thấy ví người gửi hoặc ví người nhận.');
+                }
+
+                if (senderWallet.userId.toString() !== currentUserId) {
+                    throw new Error('Truy cập bị từ chối: Bạn không có quyền chuyển tiền từ ví này.');
                 }
 
                 if (

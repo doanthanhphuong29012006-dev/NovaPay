@@ -7,6 +7,7 @@ const transferSchema = z.object({
     toWalletId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'ID ví nhận không hợp lệ'),
     amount: z.number().int().positive('Số tiền phải là số nguyên lớn hơn 0'),
     description: z.string().min(1).max(255),
+    pin: z.string().regex(/^\d{6}$/, 'Mã PIN phải gồm đúng 6 chữ số'),
 });
 
 const depositWebhookSchema = z.object({
@@ -41,6 +42,7 @@ export class WalletController {
             }
 
             const result = await this.walletService.transferMoney({
+                currentUserId: req.user!.id,
                 ...parsedBody,
                 idempotencyKey,
             });
