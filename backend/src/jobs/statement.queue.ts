@@ -8,6 +8,7 @@ export interface StatementJobPayload {
     userEmail: string;
     fromDate: string;
     toDate: string; // ISO Date String
+    userId?: string;
 }
 
 export interface StatementJobResult {

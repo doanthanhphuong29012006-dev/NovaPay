@@ -158,12 +158,16 @@ export class WalletService {
         });
     }
 
-    public async auditWallet(walletId: string) {
+    public async auditWallet(walletId: string, currentUserId?: string) {
         const objectId = new Types.ObjectId(walletId);
         const wallet = await this.walletRepo.findById(objectId);
 
         if (!wallet) {
             throw new Error('Không tìm thấy ví.');
+        }
+
+        if (currentUserId && wallet.userId.toString() !== currentUserId) {
+            throw new Error('Truy cập bị từ chối: Bạn không có quyền xem thông tin ví này.');
         }
 
         const calculatedBalance = await this.ledgerRepo.calculateLedgerBalance(objectId);
@@ -195,10 +199,14 @@ export class WalletService {
             `locks:wallet:${targetWalletId}`,
         ].sort();
 
-        const lock = await redlock.acquire(lockResources, 5000);
+        const lockTTL = 10000;
 
-        try {
+        return await (redlock as any).using(lockResources, lockTTL, async (signal: any) => {
             return await Database.runInTransaction(async (session) => {
+                if (signal.aborted) {
+                    throw new Error('Lock đã hết hạn hoặc bị hủy trong lúc xử lý webhook nạp tiền.');
+                }
+
                 const existingTx = await this.ledgerRepo.findByIdempotencyKey(idempotencyKey, session);
                 if (existingTx) {
                     return {
@@ -286,16 +294,18 @@ export class WalletService {
                     newBalance: updatedUserWallet.balance,
                 };
             });
-        } finally {
-            await (lock as any).release().catch(() => {});
-        }
+        });
     }
 
-    public async requestStatementExport(payload: StatementJobPayload) {
+    public async requestStatementExport(payload: StatementJobPayload & { currentUserId?: string }) {
         const wallet = await this.walletRepo.findById(payload.walletId);
 
         if (!wallet) {
             throw new Error('Không tìm thấy ví cần xuất sao kê.');
+        }
+
+        if (payload.currentUserId && wallet.userId.toString() !== payload.currentUserId) {
+            throw new Error('Truy cập bị từ chối: Bạn không có quyền xuất sao kê từ ví này.');
         }
 
         const fromDay = payload.fromDate.slice(0, 10);
@@ -316,7 +326,10 @@ export class WalletService {
             await existingJob.remove();
         }
 
-        const job = await statementQueue.add('generate-csv-statement', payload, {
+        const job = await statementQueue.add('generate-csv-statement', {
+            ...payload,
+            userId: wallet.userId.toString(),
+        }, {
             jobId: customJobId,
         });
 
@@ -327,10 +340,22 @@ export class WalletService {
         };
     }
 
-    public async getStatementJobStatus(jobId: string) {
+    public async getStatementJobStatus(jobId: string, currentUserId?: string) {
         const job = await statementQueue.getJob(jobId);
         if (!job) {
             throw new Error('Không tìm thấy tiến trình xuất sao kê với mã này.');
+        }
+
+        if (currentUserId) {
+            if (job.data?.userId && job.data.userId !== currentUserId) {
+                throw new Error('Truy cập bị từ chối: Bạn không có quyền xem trạng thái tiến trình này.');
+            }
+            if (!job.data?.userId && job.data?.walletId) {
+                const wallet = await this.walletRepo.findById(job.data.walletId);
+                if (wallet && wallet.userId.toString() !== currentUserId) {
+                    throw new Error('Truy cập bị từ chối: Bạn không có quyền xem trạng thái tiến trình này.');
+                }
+            }
         }
 
         const state = await job.getState();

@@ -59,7 +59,7 @@ export class WalletController {
 
     public audit = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const result = await this.walletService.auditWallet(req.params.id as string);
+            const result = await this.walletService.auditWallet(req.params.id as string, req.user!.id);
             res.status(200).json({
                 success: true,
                 data: result,
@@ -88,7 +88,11 @@ export class WalletController {
             const parsedBody = exportStatementSchema.parse(req.body);
             const walletId = req.params.id as string ;
 
-            const result = await this.walletService.requestStatementExport({ walletId, ...parsedBody });
+            const result = await this.walletService.requestStatementExport({ 
+                currentUserId: req.user!.id,
+                walletId, 
+                ...parsedBody 
+            });
 
             res.status(202).json({
                 success: true,
@@ -101,7 +105,7 @@ export class WalletController {
 
     public getStatementStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const result = await this.walletService.getStatementJobStatus(req.params.jobId as string);
+            const result = await this.walletService.getStatementJobStatus(req.params.jobId as string, req.user!.id);
 
             res.status(200).json({
                 success: true,
