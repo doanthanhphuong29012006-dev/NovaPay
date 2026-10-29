@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "@types/redlock": "^4.0.8"
+  }
+}

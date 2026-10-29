@@ -143,7 +143,7 @@ export class WalletService {
             
             return TransferResult;
         } finally {
-            await lock.release().catch(err => {
+            await (lock as any).release().catch((err: any) => {
                 console.error('Lỗi khi giải phóng redlock: ', err);
             });
         }
@@ -278,7 +278,7 @@ export class WalletService {
                 };
             });
         } finally {
-            await lock.release().catch(() => {});
+            await (lock as any).release().catch(() => {});
         }
     }
 

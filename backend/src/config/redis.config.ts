@@ -27,12 +27,11 @@ class RedisManager {
             console.error('Lỗi Redis Client:', err);
         });
 
-        this.redlock = new Redlock([this.client], {
+        this.redlock = new Redlock([this.client as any], {
             driftFactor: 0.01,
             retryCount: 60,
             retryDelay: 100,
             retryJitter: 50,
-            automaticExtensionThreshold: 500,
         });
     }
 
@@ -44,4 +43,4 @@ class RedisManager {
 
 export const redisManager = new RedisManager();
 export const redisClient = redisManager.client;
-export const redlock = redisManager.redlock;
+export const redlock: Redlock = redisManager.redlock;
