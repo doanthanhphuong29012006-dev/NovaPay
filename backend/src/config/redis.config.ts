@@ -34,8 +34,7 @@ class RedisManager {
             retryJitter: 50,
         });
 
-        // Listener chặn crash process do lỗi tranh chấp khóa
-        this.redlock.on('clientError', (err: any) => {
+        (this.redlock as any).on('error', (err: any) => {
             if (err?.name === 'ResourceLockedError') {
                 return; 
             }

@@ -49,12 +49,15 @@ export class WalletService {
 
         const sortedWalletIds = [fromWalletId, toWalletId].sort();
         const lockResources = sortedWalletIds.map(id => `locks:wallet:${id}`);
-        const lockTTL = 5000;
+        
+        const lockTTL = 10000;
 
-        const lock = await redlock.acquire(lockResources, lockTTL);
-
-        try {
+        return await (redlock as any).using(lockResources, lockTTL, async (signal: any) => {
             const TransferResult = await Database.runInTransaction(async (session) => {
+                if (signal.aborted) {
+                    throw new Error('Lock đã hết hạn hoặc bị hủy trong lúc xử lý giao dịch.');
+                }
+
                 const senderObjectId = new Types.ObjectId(fromWalletId);
                 const receiverObjectId = new Types.ObjectId(toWalletId);
 
@@ -152,11 +155,7 @@ export class WalletService {
             });
             
             return TransferResult;
-        } finally {
-            await (lock as any).release().catch((err: any) => {
-                console.error('Lỗi khi giải phóng redlock: ', err);
-            });
-        }
+        });
     }
 
     public async auditWallet(walletId: string) {
