@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "bullmq": "^6.3.19",
     "cors": "^2.8.6",
     "dotenv": "^18.0.8",
@@ -7,6 +8,7 @@
     "express-async-handler": "^1.2.0",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.11.2",
     "redlock": "^5.0.0-beta.2",
     "zod": "^4.6.7"
@@ -16,8 +18,10 @@
     "test:concurrency": "tsx tests/concurrency.test.ts"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.5",
     "nodemon": "^3.1.14",
     "tsx": "^4.23.15",
