@@ -5,6 +5,7 @@ import { LedgerRepository } from "../ledger/ledger.repository";
 import { WalletRepository } from "./wallet.repository";
 import { WalletStatus } from "./wallet.model";
 import { EntryType, TransactionStatus, TransactionType } from "../ledger/ledger.model";
+import { StatementJobPayload, statementQueue } from "../../jobs/statement.queue";
 
 export interface TransferMoneyDTO {
     fromWalletId: string;
@@ -279,5 +280,58 @@ export class WalletService {
         } finally {
             await lock.release().catch(() => {});
         }
+    }
+
+    public async requestStatementExport(payload: StatementJobPayload) {
+        const wallet = await this.walletRepo.findById(payload.walletId);
+
+        if (!wallet) {
+            throw new Error('Không tìm thấy ví cần xuất sao kê.');
+        }
+
+        const fromDay = payload.fromDate.slice(0, 10);
+        const toDay = payload.toDate.slice(0, 10);
+        const customJobId = `export-${payload.walletId}-${fromDay}-${toDay}`;
+
+        const existingJob = await statementQueue.getJob(customJobId);
+        if (existingJob) {
+            const state = await existingJob.getState();
+            if (state === 'active' || state === 'waiting' || state === 'delayed') {
+                return {
+                    jobId: existingJob.id,
+                    status: state,
+                    message: 'Yêu cầu xuất sao kê của bạn đang được hệ thống xử lý.',
+                };
+            }
+
+            await existingJob.remove();
+        }
+
+        const job = await statementQueue.add('generate-csv-statement', payload, {
+            jobId: customJobId,
+        });
+
+        return {
+            jobId: job.id,
+            status: 'queued',
+            message: 'Đã tiếp nhận yêu cầu xuất sao kê. Hệ thống đang xử lý ngầm.',
+        };
+    }
+
+    public async getStatementJobStatus(jobId: string) {
+        const job = await statementQueue.getJob(jobId);
+        if (!job) {
+            throw new Error('Không tìm thấy tiến trình xuất sao kê với mã này.');
+        }
+
+        const state = await job.getState();
+
+        return {
+            jobId: job.id,
+            state,
+            progress: job.progress,
+            result: state === 'completed' ? job.returnvalue : null,
+            faildReason: state === 'failed' ? job.failedReason : null,
+        };
     }
 }
