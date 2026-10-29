@@ -1,4 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
 import walletRoutes from './modules/wallet/wallet.routes';
 
 declare global {
@@ -10,13 +12,25 @@ declare global {
 }
 
 const app = express();
+
+// Global Middlewares
+app.use(helmet());
+app.use(cors());
+
 app.use(express.json({
     verify: (req: Request, _res, buf: Buffer) => {
         req.rawBody = buf;
     },
 }));
 
-// Đăng ký Routes
+// API Health Check
+app.get('/health', (_req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        timestamp: new Date().toISOString() 
+    });
+});
+
 app.use('/api/v1/wallets', walletRoutes);
 
 // Global Error Handler

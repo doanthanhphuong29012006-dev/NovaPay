@@ -1,25 +1,10 @@
-import express from 'express';
-import helmet from 'helmet';
-import cors from 'cors';
 import { env } from './config/env.config';
 import { Database } from './config/database.config';
 import { redisManager } from './config/redis.config';
 import { statementWorker } from './jobs/statement.worker';
 import { statementQueue } from './jobs/statement.queue';
 
-const app = express();
-
-// Global Middlewares
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
-
-app.get('/health', (_req, res) => {
-    res.status(200).json({ 
-        status: 'OK', 
-        timestamp: new Date().toISOString() 
-    });
-});
+import app from './app';
 
 async function startServer() {
     const db = Database.getInstance();
