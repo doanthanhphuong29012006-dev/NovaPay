@@ -62,9 +62,9 @@ export class AuthService {
             throw new Error('Tài khoản của bạn đã bị khóa.');
         }
 
-        const jwtID = randomUUID();
+        const jti = randomUUID();
         const accessToken = jwt.sign(
-            { sub: user._id.toString(), role: user.role, jwtID },
+            { sub: user._id.toString(), role: user.role, jti },
             env.JWT_SECRET,
             { expiresIn: ACCESS_TOKEN_TTL_SECONDS }
         );
@@ -84,10 +84,10 @@ export class AuthService {
         };
     }
 
-    public async logout(userId: string, jwtID: string, exp: number) {
+    public async logout(userId: string, jti: string, exp: number) {
             const remainingSeconds = exp - Math.floor(Date.now() / 1000);
             if (remainingSeconds > 0) {
-                await redisClient.set(`auth:blacklist:${jwtID}`, 'revoked', 'EX', remainingSeconds);
+                await redisClient.set(`auth:blacklist:${jti}`, 'revoked', 'EX', remainingSeconds);
             }
             await redisClient.del(`auth:refresh:${userId}`)
     }
