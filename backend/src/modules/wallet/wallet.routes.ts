@@ -12,4 +12,8 @@ router.get('/:id/audit', walletController.audit);
 
 router.post('/deposit-webhook', verifyWebhookSignature, walletController.depositWebhook);
 
+router.post('/:id/statements/export', walletController.requestStatement);
+
+router.get('/statements/jobs/:jobId', walletController.getStatementStatus);
+
 export default router;

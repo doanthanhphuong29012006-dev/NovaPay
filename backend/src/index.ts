@@ -4,6 +4,8 @@ import cors from 'cors';
 import { env } from './config/env.config';
 import { Database } from './config/database.config';
 import { redisManager } from './config/redis.config';
+import { statementWorker } from './jobs/statement.worker';
+import { statementQueue } from './jobs/statement.queue';
 
 const app = express();
 
@@ -33,6 +35,9 @@ async function startServer() {
         server.close(async () => {
         console.log('Đã ngừng nhận HTTP request mới.');
         try {
+            await statementWorker.close();
+            await statementQueue.close();
+
             await db.disconnect();
             await redisManager.disconnect();
             console.log('Hoàn tất quá trình tắt hệ thống.');
