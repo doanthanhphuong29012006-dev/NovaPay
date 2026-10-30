@@ -23,3 +23,7 @@ node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# NovaPay custom agents & seeds
+.agents/
+data_seed/
